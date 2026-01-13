@@ -1,8 +1,9 @@
 ## OrionArm OS Aarch64 ##
 # Files:
-1) start.S - bootloader
+1) start.S - Stage 2 bootloader
 2) kernel.c - Kernel and Shell
 3) linker.ld - linker script
+4) bootloader.S - Bootloader
 ## dependencies:
 1) Qemu Aarch64
 2) Clang
@@ -27,7 +28,7 @@ clang \
   -o kernel.o
 
 ```
-## 2. Compile Bootloader (Assembly)
+## 2. Compile Stage 2 bootloader (Assembly)
 ```bash
 clang \
   --target=aarch64-none-elf \
@@ -37,12 +38,24 @@ clang \
   -c start.S \
   -o start.o
 ```
-## 3. Link (lld)
+## 3. Compile Bootloader (Assembly)
+```bash
+clang \
+  --target=aarch64-none-elf \
+  -mcpu=cortex-a53 \
+  -ffreestanding \
+  -nostdlib \
+  -c bootloader.S \
+  -o bootloader.o
+```
+
+## 4. Link (lld)
 ```bash
 ld.lld \
   -T linker.ld \
-  start.o kernel.o \
+ bootloader.o start.o kernel.o \
   -o kernel.elf
+
 ```
 ## 4. objcopy (llvm-objcopy)
 ```bash
@@ -62,6 +75,12 @@ qemu-system-aarch64 \
 2) halt
 3) reboot
 4) kpanic
+5) help
+6) poweroff
+7) shutdown
+8) echo
+9) calc
+10) clear
 ## Copyright OrionOS - 2026 - present Abhigyan Ghosh Project Orion All Rights Reserved. Lisenced under the MIT lisence 
 
 
