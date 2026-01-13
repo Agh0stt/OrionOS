@@ -1,18 +1,24 @@
-/* Project Orion - OrionOS - Abhigyan Ghosh
-* Lisenced Under the MIT lisence
-* Copyright - 2026 - present Abhigyan Ghosh
-* Project OrionOS - Aarch64
-* linker.ld - linker Script
-*/
 ENTRY(_start)
 
 SECTIONS {
+    /* Bootloader */
+    . = 0x40080000;
+    .text.boot : {
+        bootloader.o(.text.boot)
+    }
+
+    /* Kernel */
     . = 0x40100000;
-    .text.boot : { start.o(.text.boot) }
-    .text : { *(.text) }
+    .text : {
+        kernel.o(.text)
+        start.o(.text.boot)
+    }
+
+    .rodata : { *(.rodata) }
     .data : { *(.data) }
     .bss : { *(.bss) *(COMMON) }
+
     . = ALIGN(8);
-    . += 0x1000;  /* 4KB stack */
+    . += 0x2000;
     stack_top = .;
 }
