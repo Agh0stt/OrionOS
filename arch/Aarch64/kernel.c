@@ -1,12 +1,17 @@
 /* Project Orion - OrionOS - Abhigyan Ghosh
-* Lisenced Under the MIT lisence
-* Copyright - 2026 - present Abhigyan Ghosh
-* Project OrionOS - Aarch64
-* kernel.c - kernel and shell
+
+Lisenced Under the MIT lisence
+
+Copyright - 2026 - present Abhigyan Ghosh
+
+Project OrionOS - Aarch64
+
+kernel.c - kernel and shell
 */
 typedef unsigned long size_t;
 typedef unsigned char uint8_t;
 typedef unsigned long uint64_t;
+
 
 // UART base address for QEMU virt (PL011)
 volatile uint8_t *uart = (uint8_t *)0x09000000;
@@ -34,81 +39,33 @@ void putchar(char c) {
 while (uart[UART_FR] & FR_TXFF);  // Wait if TX full
 uart[UART_DR] = c;
 }
-
-void puts(const char *s) {
-while (*s) {
-if (*s == '\n') putchar('\r');  // CR before LF for terminals
-putchar(*s++);
-}
-}
-
-char getchar() {
-while (uart[UART_FR] & FR_RXFE);  // Wait for RX data
-return uart[UART_DR];
-}
-
-void gets(char *buf, int max_len) {
-int i = 0;
-char c;
-while (i < max_len - 1 && (c = getchar()) != '\r' && c != '\n') {
-putchar(c);  // Echo
-buf[i++] = c;
-}
-buf[i] = '\0';
-puts("\n");
-}
-
-// Minimal string functions
 int strlen(const char *s) {
 int len = 0;
 while (*s++) len++;
 return len;
 }
 
-int strcmp(const char *s1, const char *s2) {
-while (*s1 && *s1 == *s2) { s1++; s2++; }
-return *s1 - *s2;
+
+char getchar() {
+while (uart[UART_FR] & FR_RXFE);  // Wait for RX data
+return uart[UART_DR];
 }
 
-int strncmp(const char *s1, const char *s2, int n) {
-while (n > 0 && *s1 && *s1 == *s2) { s1++; s2++; n--; }
-return n == 0 ? 0 : *s1 - *s2;
+void puts(const char *s) {
+    while (*s) {
+        if (*s == '\n') {
+            putchar('\r');   // CR before LF
+            putchar('\n');
+        } else if (*s == '\b') {  // handle backspace
+            putchar('\b');       // move cursor back
+            putchar(' ');        // overwrite with space
+            putchar('\b');       // move cursor back again
+        } else {
+            putchar(*s);
+        }
+        s++;
+    }
 }
-
-// Simple integer to string (for calc output)
-void itoa(long n, char *buf, int base) {
-char *p = buf;
-char *start = buf;
-int sign = 0;
-
-if (n < 0 && base == 10) {  
-    sign = 1;  
-    n = -n;  
-}  
-
-if (n == 0) {  
-    *p++ = '0';  
-} else {  
-    while (n > 0) {  
-        int digit = n % base;  
-        *p++ = (digit < 10) ? (digit + '0') : (digit - 10 + 'a');  
-        n /= base;  
-    }  
-}  
-
-if (sign) *p++ = '-';  
-*p = '\0';  
-
-// Reverse the string  
-p--;  
-while (start < p) {  
-    char tmp = *start;  
-    *start++ = *p;  
-    *p-- = tmp;  
-}
-
-}
-
 // Screen control
 void clear_screen(void) {
 puts("\033[2J\033[H");  // ANSI: Clear screen and home cursor
@@ -121,6 +78,100 @@ for (int i = 0; i < padding; i++) putchar(' ');
 puts(s);
 puts("\n");
 }
+
+// Simple busy-wait delay
+void delay_ms(uint64_t ms) {
+    volatile uint64_t count;
+    const uint64_t loop_per_ms = 100000; // Adjust for CPU/QEMU speed
+
+    for (uint64_t i = 0; i < ms; i++) {
+        for (count = 0; count < loop_per_ms; count++) {
+            asm volatile("nop"); // prevent optimization
+        }
+    }
+}
+
+void gets(char *buf, int max_len) {
+    int i = 0;
+    char c;
+    while (i < max_len - 1) {
+        c = getchar();
+        if (c == '\r' || c == '\n') break;
+
+        if (c == '\b' || c == 0x7F) {     // backspace or delete
+            if (i > 0) {
+                i--;
+                puts("\b");               // backspace handled inside puts
+            }
+            continue;
+        }
+
+        putchar(c);  // echo character
+        buf[i++] = c;
+    }
+    buf[i] = '\0';
+    puts("\n");
+}
+// Minimal string functions
+
+void halt(void) {
+puts("System halted.\n");
+while (1) asm volatile("wfi");
+}
+
+void shutdown(void) {
+    clear_screen();
+    print_centered("Shutting Down");
+    delay_ms(2000);
+    clear_screen();
+    halt();
+}
+
+int strcmp(const char *s1, const char *s2) {
+while (*s1 && *s1 == *s2) { s1++; s2++; }
+return *s1 - *s2;
+}
+
+int strncmp(const char *s1, const char *s2, int n) {
+while (n > 0 && *s1 && *s1 == *s2) { s1++; s2++; n--; }
+return n == 0 ? 0 : *s1 - *s2;
+}
+
+
+// Simple integer to string (for calc output)
+void itoa(long n, char *buf, int base) {
+char *p = buf;
+char *start = buf;
+int sign = 0;
+
+if (n < 0 && base == 10) {
+sign = 1;
+n = -n;
+}
+
+if (n == 0) {
+*p++ = '0';
+} else {
+while (n > 0) {
+int digit = n % base;
+*p++ = (digit < 10) ? (digit + '0') : (digit - 10 + 'a');
+n /= base;
+}
+}
+
+if (sign) *p++ = '-';
+*p = '\0';
+
+// Reverse the string
+p--;
+while (start < p) {
+char tmp = *start;
+*start++ = *p;
+*p-- = tmp;
+}
+
+}
+
 
 // Fancy colored prompt
 void print_prompt(void) {
@@ -167,51 +218,52 @@ puts("Usage: echo some text here\n");
 }
 
 void calc(const char *cmd) {
-    const char *p = cmd + 5;   // skip "calc "
-    while (*p == ' ') p++;
+const char *p = cmd + 5;   // skip "calc "
+while (*p == ' ') p++;
 
-    long a = 0, b = 0;
-    char op = 0;
+long a = 0, b = 0;  
+char op = 0;  
 
-    // Parse first number
-    while (*p >= '0' && *p <= '9') {
-        a = a * 10 + (*p - '0');
-        p++;
-    }
+// Parse first number  
+while (*p >= '0' && *p <= '9') {  
+    a = a * 10 + (*p - '0');  
+    p++;  
+}  
 
-    // Operator
-    if (*p == '+' || *p == '-' || *p == '*' || *p == '/') {
-        op = *p++;
-    } else {
-        puts("Invalid expression\n");
-        return;
-    }
+// Operator  
+if (*p == '+' || *p == '-' || *p == '*' || *p == '/') {  
+    op = *p++;  
+} else {  
+    puts("Invalid expression\n");  
+    return;  
+}  
 
-    // Parse second number
-    while (*p >= '0' && *p <= '9') {
-        b = b * 10 + (*p - '0');
-        p++;
-    }
+// Parse second number  
+while (*p >= '0' && *p <= '9') {  
+    b = b * 10 + (*p - '0');  
+    p++;  
+}  
 
-    long result = 0;
-    switch (op) {
-        case '+': result = a + b; break;
-        case '-': result = a - b; break;
-        case '*': result = a * b; break;
-        case '/':
-            if (b == 0) {
-                puts(ANSI_RED "Division by zero!" ANSI_RESET "\n");
-                return;
-            }
-            result = a / b;
-            break;
-    }
+long result = 0;  
+switch (op) {  
+    case '+': result = a + b; break;  
+    case '-': result = a - b; break;  
+    case '*': result = a * b; break;  
+    case '/':  
+        if (b == 0) {  
+            puts(ANSI_RED "Division by zero!" ANSI_RESET "\n");  
+            return;  
+        }  
+        result = a / b;  
+        break;  
+}  
 
-    char buf[32];
-    itoa(result, buf, 10);
-    puts("Result: ");
-    puts(buf);
-    puts("\n");
+char buf[32];  
+itoa(result, buf, 10);  
+puts("Result: ");  
+puts(buf);  
+puts("\n");
+
 }
 // PSCI calls via SMC (for reboot/poweroff)
 #define PSCI_FN_RESET 0x84000009  // System reset
@@ -221,13 +273,12 @@ register uint64_t x0 asm("x0") = fn;
 asm volatile("smc #0" : "+r"(x0) :: "memory");
 }
 
-void halt(void) {
-puts("System halted.\n");
-while (1) asm volatile("wfi");
-}
+
 
 void reboot(void) {
-puts("Rebooting...\n");
+    clear_screen();
+print_centered("Rebooting...\n");
+delay_ms(2000);
 psci_call(PSCI_FN_RESET);
 halt();  // Fallback if PSCI fails
 }
@@ -245,21 +296,22 @@ while (1) {
 print_prompt();
 gets(cmd, sizeof(cmd));
 
-if (cmd[0] == '\0') continue;  
+if (cmd[0] == '\0') continue;
 
-    if (strcmp(cmd, "help") == 0)          help();  
-    else if (strcmp(cmd, "clear") == 0)     clear();  
-    else if (strcmp(cmd, "version") == 0)   version();  
-    else if (strcmp(cmd, "halt") == 0)      halt();  
-    else if (strcmp(cmd, "reboot") == 0)    reboot();  
-    else if (strcmp(cmd, "kpanic") == 0)    kpanic();  
-    else if (strcmp(cmd, "shutdown") == 0 ||  
-             strcmp(cmd, "poweroff") == 0)  halt();  
-    else if (strncmp(cmd, "echo ", 5) == 0) echo(cmd);  
-    else if (strncmp(cmd, "calc ", 5) == 0) calc(cmd);  
-    else {  
-        puts(ANSI_YELLOW "Unknown command. Type 'help' for list." ANSI_RESET "\n");  
-    }  
+if (strcmp(cmd, "help") == 0)          help();    
+else if (strcmp(cmd, "clear") == 0)     clear();    
+else if (strcmp(cmd, "version") == 0)   version();    
+else if (strcmp(cmd, "halt") == 0)      halt();    
+else if (strcmp(cmd, "reboot") == 0)    reboot();    
+else if (strcmp(cmd, "kpanic") == 0)    kpanic();    
+else if (strcmp(cmd, "shutdown") == 0 ||    
+         strcmp(cmd, "poweroff") == 0)  shutdown();    
+else if (strncmp(cmd, "echo ", 5) == 0) echo(cmd);    
+else if (strncmp(cmd, "calc ", 5) == 0) calc(cmd);    
+else {    
+    puts(ANSI_YELLOW "Unknown command. Type 'help' for list." ANSI_RESET "\n");    
+}
+
 }
 
 }
@@ -268,7 +320,7 @@ if (cmd[0] == '\0') continue;
 void kmain(void) {
 clear_screen();
 print_centered("OrionOS - aarch64");
-puts("\nBooting kernel...\n\n");
 version();
 shell();
 }
+
